@@ -1,0 +1,26 @@
+// Bump CACHE when you deploy a new version so phones pick it up.
+const CACHE = 'dozy-v1';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+});
+// Cache first so it opens instantly offline, refreshed in the background. Google Fonts are cached on first use.
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  const font = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+  if (url.origin !== location.origin && !font) return;
+  e.respondWith(caches.match(req).then(hit => {
+    const net = fetch(req).then(res => {
+      if (res && (res.ok || res.type === 'opaque')) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
+      return res;
+    }).catch(() => hit || (req.mode === 'navigate' ? caches.match('./index.html') : undefined));
+    if (hit) e.waitUntil(net.catch(() => {}));
+    return hit || net;
+  }));
+});
